@@ -5,15 +5,15 @@ import pandas as pd
 
 ### Fundmental definitions
 def shear_m(Young_m, Poisson_r, loss_factor):
-    return Young_m*(1-1j*loss_factor)/(2*(1+Poisson_r))
+    return Young_m*(1+1j*loss_factor)/(2*(1+Poisson_r))
 
 
 def lame_const(Young_m, Poisson_r, loss_factor):
-    return Young_m**(1-1j*loss_factor)*Poisson_r/((1+Poisson_r)*(1-2*Poisson_r))
+    return Young_m*(1+1j*loss_factor)*Poisson_r/((1+Poisson_r)*(1-2*Poisson_r))
 
 
 def longitudinal_m(Yong_m, Poisson_r, loss_factor):
-    return Yong_m*(1-Poisson_r)*(1-1j*loss_factor)/((1+Poisson_r)*(1-2*Poisson_r))
+    return Yong_m*(1-Poisson_r)*(1+1j*loss_factor)/((1+Poisson_r)*(1-2*Poisson_r))
     
 ## eq.(1-13b), in book page 26
 def ith_longitudinal_speed(longitudinal_m, density):

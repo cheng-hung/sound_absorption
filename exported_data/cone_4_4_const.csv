@@ -1,0 +1,11 @@
+shape cone
+p_mm 4.0
+q_mm 4.0
+lh_mm 40.0
+b_mm 15.0
+num_segments 100
+Young_GPa 0.14
+Poisson_r 0.49
+loss_factor 0.23
+rubber_kgm-3 1100
+air_kgm-3 1.21

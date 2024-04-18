@@ -9,7 +9,7 @@ def shear_m(Young_m, Poisson_r, loss_factor):
 
 
 def lame_const(Young_m, Poisson_r, loss_factor):
-    return Young_m**(1-1j*loss_factor)*Poisson_r/((1+Poisson_r)*(1-2*Poisson_r))
+    return Young_m*(1-1j*loss_factor)*Poisson_r/((1+Poisson_r)*(1-2*Poisson_r))
 
 
 def longitudinal_m(Yong_m, Poisson_r, loss_factor):

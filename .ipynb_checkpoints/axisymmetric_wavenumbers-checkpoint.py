@@ -152,7 +152,6 @@ kz_root = newton(determinant_01, kl[-1], args=(ai[-1], cell_radius, shear_modulu
 
 
 from cxroots import Circle
-get_ipython().run_line_magic('pinfo', 'Circle')
 root_range = Circle(0, 100)
 determinant_02 = lambda kz: determinant_01(kz, ai[-1], cell_radius, shear_modulus, lame_constant, omega, cl[-1], ct[-1])
 # roots = root_range.roots(determinant_02)
