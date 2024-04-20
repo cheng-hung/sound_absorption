@@ -284,7 +284,7 @@ class sound_performance(wavenumber):
                 df_absorption.to_excel(writer, sheet_name='Sound_absorption', index=False)
             print(f'Save file to {fn}')
 
-        except ValueError:
+        except ValueError, ModuleNotFoundError:
             fn_const = os.path.join(filepath, filename.split('.')[0]+'_const.csv')
             df_const.to_csv(fn_const, sep=' ', index=False, header=False, float_format='{:.8e}'.format)
             print(f'Save file to {fn_const}')
