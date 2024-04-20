@@ -95,7 +95,7 @@ class wavenumber(elastic_module):
     
     
     ## Solve the determinant equation of determinant numerically in Scipy...
-    def axial_wavenumber(self, single_omega, guess=10+10j):
+    def axial_wavenumber(self, single_omega, guess=0.1+0.1j):
         kz = []
         failed_kz = []
         kl = single_omega/self.longitudinal_speed()
@@ -107,7 +107,7 @@ class wavenumber(elastic_module):
                 kz_root = newton(self.determinant, x0, 
                                  args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
                                        self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                 tol=1.48e-5, maxiter=100)
+                                 tol=1.48e-8, maxiter=200)
                 kz.append(kz_root)
                 x0 = kz_root
 
@@ -120,12 +120,12 @@ class wavenumber(elastic_module):
                     try:
                         x0 = kz_root
                     except UnboundLocalError:
-                        x0 = abs(guess)*i
+                        x0 = abs(guess)*(i+1)
                     
                     kz_root = newton(self.determinant, x0, 
                                      args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
                                            self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                     tol=1.48e-5, maxiter=1000)
+                                     tol=1.48e-8, maxiter=1000)
                     kz.append(kz_root)
                     x0 = kz_root
 
@@ -146,7 +146,7 @@ class wavenumber(elastic_module):
     
     
     
-    def axial_wavenumber_array(self, guess=10+10j):    
+    def axial_wavenumber_array(self, guess=0.1+0.1j):    
         wavenumer_array = np.zeros((self.frequency_array.shape[0], self.segments), dtype=complex)
         failed_roots = []
         i = 0
@@ -284,7 +284,7 @@ class sound_performance(wavenumber):
                 df_absorption.to_excel(writer, sheet_name='Sound_absorption', index=False)
             print(f'Save file to {fn}')
 
-        except ValueError, ModuleNotFoundError:
+        except (ValueError, ModuleNotFoundError):
             fn_const = os.path.join(filepath, filename.split('.')[0]+'_const.csv')
             df_const.to_csv(fn_const, sep=' ', index=False, header=False, float_format='{:.8e}'.format)
             print(f'Save file to {fn_const}')
