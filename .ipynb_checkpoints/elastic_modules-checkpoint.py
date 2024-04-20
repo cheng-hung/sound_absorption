@@ -5,15 +5,15 @@ import pandas as pd
 
 ### Fundmental definitions
 def shear_m(Young_m, Poisson_r, loss_factor):
-    return Young_m*(1+1j*loss_factor)/(2*(1+Poisson_r))
+    return Young_m*(1-1j*loss_factor)/(2*(1+Poisson_r))
 
 
 def lame_const(Young_m, Poisson_r, loss_factor):
-    return Young_m*(1+1j*loss_factor)*Poisson_r/((1+Poisson_r)*(1-2*Poisson_r))
+    return Young_m*(1-1j*loss_factor)*Poisson_r/((1+Poisson_r)*(1-2*Poisson_r))
 
 
 def longitudinal_m(Yong_m, Poisson_r, loss_factor):
-    return Yong_m*(1-Poisson_r)*(1+1j*loss_factor)/((1+Poisson_r)*(1-2*Poisson_r))
+    return Yong_m*(1-Poisson_r)*(1-1j*loss_factor)/((1+Poisson_r)*(1-2*Poisson_r))
     
 ## eq.(1-13b), in book page 26
 def ith_longitudinal_speed(longitudinal_m, density):
@@ -49,13 +49,14 @@ def effective_radius(p, q, lh, num_segments, shape='cone'):
     return r_effective, lh_n
 
 
-
+'''
 ### Reference: Influence of hole shape on sound absorption of underwater anechoic layers
 #### https://www.sciencedirect.com/science/article/abs/pii/S0022460X1830227X
 
 ### Start at eq(15) in the paper
 ## The effective density: (15)
 ## ai represents the inner radii of the pipe in the i th layer
+'''
 def ith_effect_density(ai, cell_radius, rubber_den, air_den):
     return rubber_den*(1-(ai/cell_radius)**2) + air_den*(ai/cell_radius)**2
 

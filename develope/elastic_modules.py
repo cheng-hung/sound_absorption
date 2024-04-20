@@ -49,13 +49,14 @@ def effective_radius(p, q, lh, num_segments, shape='cone'):
     return r_effective, lh_n
 
 
-
+'''
 ### Reference: Influence of hole shape on sound absorption of underwater anechoic layers
 #### https://www.sciencedirect.com/science/article/abs/pii/S0022460X1830227X
 
 ### Start at eq(15) in the paper
 ## The effective density: (15)
 ## ai represents the inner radii of the pipe in the i th layer
+'''
 def ith_effect_density(ai, cell_radius, rubber_den, air_den):
     return rubber_den*(1-(ai/cell_radius)**2) + air_den*(ai/cell_radius)**2
 
