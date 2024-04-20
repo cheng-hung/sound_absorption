@@ -10,7 +10,7 @@ from scipy.optimize import newton
 
 '''
 ### Reference: Influence of hole shape on sound absorption of underwater anechoic layers
-#### https://www.sciencedirect.com/science/article/abs/pii/S0022460X1830227X
+### https://www.sciencedirect.com/science/article/abs/pii/S0022460X1830227X
 '''
 
 class anechoic_layers():
@@ -115,13 +115,14 @@ class wavenumber(elastic_module):
                     try:
                         x0 = kz_root
                     except UnboundLocalError:
-                        x0 = guess
+                        x0 = abs(guess)
                     
                     kz_root = newton(self.determinant, x0, 
                                      args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
                                            self.longitudinal_speed()[i], self.transverse_speed()[i]), 
                                      tol=1.48e-5, maxiter=100)
-                    kz.append(kz_root) 
+                    kz.append(kz_root)
+                    x0 = kz_root
 
                 except RuntimeError:
                     print(f'Second try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
@@ -129,6 +130,12 @@ class wavenumber(elastic_module):
                     kz.append(0+0j)
                     failed_kz.append([single_omega, i, ai.shape[0]])
                     # break
+        
+        
+        if self.q_hole == 0:
+            print('Since q=0, the root of kz at the last segment cannot be solved.')
+            print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
+            kz[-1] = kz[-2]
 
         return np.asarray(kz), failed_kz
     
@@ -158,6 +165,7 @@ class sound_performance(wavenumber):
     def __init__(self, determinant, frequency_array, medium_density=998, sound_speed_medium=1483):
         self.zw = medium_density * sound_speed_medium
         self.wavenumer_array = []
+        self.failed_root = []
         super().__init__(determinant, frequency_array)
         
     ## eq.(1-13b), in book page 26
@@ -207,8 +215,7 @@ class sound_performance(wavenumber):
     ## The impedance of the front interface Zf: (22)
     def imped_front(self, omega, wave_number):
         # zf = np.absolute(tn[0,0]/tn[1,0])
-        zf = (self.total_tran_matrix(omega, wave_number)[0,0]/self.total_tran_matrix(omega, wave_number)[1,0])
-        return zf
+        return (self.total_tran_matrix(omega, wave_number)[0,0]/self.total_tran_matrix(omega, wave_number)[1,0])
 
 
     ## The reflection coefficient of the anechoic layer: (23)
@@ -240,6 +247,47 @@ class sound_performance(wavenumber):
 
         return np.asarray(absorption_list)
         
+        
+        
+        
+    def save_data(self, filepath, filename):
+
+        df_const = pd.DataFrame()
+        df_const['Variable'] = ['material', 'shape', 'p_mm', 'q_mm', 'lh_mm', 'b_mm',  'num_segments', 'Young_GPa', 'Poisson_r', 
+                                'loss_factor', 'rubber_kgm-3', 'air_kgm-3']
+        df_const['Value'] = [self.material, self.shape, self.p_hole*1000, self.q_hole*1000, self.h_hole*1000, self.cell_r*1000, 
+                             self.segments, self.Young/(10**9), self.Poisson, self.loss_factor, self.layer_density, self.air_density]
+
+        df_wave = pd.DataFrame()
+        df_wave['frequency_Hz'] = np.asarray([f'kz_{i:03d}' for i in range(self.segments)])
+        i = 0
+        for frequency in self.frequency_array:
+            df_wave[frequency] = self.wavenumer_array[i][:]
+            i += 1
+
+        df_absorption = pd.DataFrame()
+        df_absorption['frequency_Hz'] = self.frequency_array
+        df_absorption['absorption'] = self.absorption_frequency()
+        
+        try:
+            fn = os.path.join(filepath, filename)
+            # writer = pd.ExcelWriter(fn, engine='xlsxwriter')
+            with pd.ExcelWriter(fn, engine='xlsxwriter') as writer:
+                df_const.to_excel(writer, sheet_name='Constants', index=False)   
+                df_wave.to_excel(writer, sheet_name='Wave_numbers', index=False)
+                df_absorption.to_excel(writer, sheet_name='Sound_absorption', index=False)
+            print(f'Save file to {fn}')
+
+        except ValueError:
+            fn_const = os.path.join(filepath, filename.split('.')[0]+'_const.csv')
+            df_const.to_csv(fn_const, sep=' ', index=False, header=False, float_format='{:.8e}'.format)
+            print(f'Save file to {fn_const}')
+            fn_wave = os.path.join(filepath, filename.split('.')[0]+'_kz.csv')
+            df_wave.to_csv(fn_wave, sep=' ', index=False, header=True, float_format='{:.8e}'.format)
+            print(f'Save file to {fn_wave}')
+            fn_absor = os.path.join(filepath, filename.split('.')[0]+'_absor.csv')
+            df_absorption.to_csv(fn_absor, sep=' ', index=False, header=True, float_format='{:.8e}'.format)
+            print(f'Save file to {fn_absor}') 
         
         
 '''
