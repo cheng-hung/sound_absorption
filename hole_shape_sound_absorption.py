@@ -86,15 +86,20 @@ class wavenumber(elastic_module):
     def __init__(self, determinant, frequency_array):
         self.determinant = determinant
         self.frequency_array = np.asarray(frequency_array)
-        self.omega_array = np.asarray(frequency_array)*2*np.pi
+        # self.omega_array = np.asarray(frequency_array)*2*np.pi
         super().__init__()
         
+    def omega_array(self):
+        return self.frequency_array*2*np.pi
+    
+    
+    
     ## Solve the determinant equation of determinant numerically in Scipy...
     def axial_wavenumber(self, single_omega, guess=10+10j):
         kz = []
         failed_kz = []
         kl = single_omega/self.longitudinal_speed()
-        x0 = kl[0]
+        x0 = abs(guess) # kl[0]
         ai, _ = self.effective_radius()
         for i in range(ai.shape[0]):
             # x0 = kl[i]
@@ -108,19 +113,19 @@ class wavenumber(elastic_module):
 
             except RuntimeError:
                 try:
-                    time.sleep(1)
+                    # time.sleep(1)
                     print(f'First try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
                     print('Try again...')
 
                     try:
                         x0 = kz_root
                     except UnboundLocalError:
-                        x0 = abs(guess)
+                        x0 = abs(guess)*i
                     
                     kz_root = newton(self.determinant, x0, 
                                      args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
                                            self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                     tol=1.48e-5, maxiter=100)
+                                     tol=1.48e-5, maxiter=1000)
                     kz.append(kz_root)
                     x0 = kz_root
 
@@ -145,11 +150,12 @@ class wavenumber(elastic_module):
         wavenumer_array = np.zeros((self.frequency_array.shape[0], self.segments), dtype=complex)
         failed_roots = []
         i = 0
-        for frequency, omega in zip(self.frequency_array, self.omega_array):
+        for frequency, omega in zip(self.frequency_array, self.omega_array()):
             # omega = frequency * 2 * np.pi
             kz, failed_kz = self.axial_wavenumber(omega, guess=guess)
             wavenumer_array[i][:] = kz
             failed_roots.append(failed_kz)
+            guess=kz[0]
             i += 1
             print(f'Solving determinant at {frequency = } is done.')
 
@@ -237,7 +243,7 @@ class sound_performance(wavenumber):
             raise ValueError(f'{self.frequency_array.shape = } not same as {self.wavenumer_array.shape = }')
 
         absorption_list = []
-        for omega, wave_number in zip(self.omega_array, self.wavenumer_array):
+        for omega, wave_number in zip(self.omega_array(), self.wavenumer_array):
             # self.effective_impedance(omega, wave_number)
             # self.total_tran_matrix(omega, wave_number)
             # self.imped_front()
