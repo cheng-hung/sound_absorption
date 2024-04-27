@@ -6,7 +6,7 @@ import time
 from sympy import Symbol, besselj, bessely, I, Matrix, lambdify, sqrt
 from sympy.abc import a, b, z
 from scipy.optimize import newton
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 
 
 '''
