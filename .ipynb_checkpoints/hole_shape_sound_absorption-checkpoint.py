@@ -6,6 +6,7 @@ import time
 from sympy import Symbol, besselj, bessely, I, Matrix, lambdify, sqrt
 from sympy.abc import a, b, z
 from scipy.optimize import newton
+from tqdm.notebook import tqdm
 
 
 '''
@@ -95,13 +96,15 @@ class wavenumber(elastic_module):
     
     
     ## Solve the determinant equation of determinant numerically in Scipy...
-    def axial_wavenumber(self, single_omega, guess=0.1+0.1j):
+    def axial_wavenumber(self, single_omega, guess=0.1+0.1j, leave=False):
         kz = []
         failed_kz = []
         kl = single_omega/self.longitudinal_speed()
         x0 = abs(guess) # kl[0]
         ai, _ = self.effective_radius()
-        for i in range(ai.shape[0]):
+        for i in tqdm(range(ai.shape[0]), position=1, leave=leave, 
+                      desc =f'  ... working at frequency = {single_omega/(2*np.pi):.1f} Hz', ):
+        # for i in range(ai.shape[0]):
             # x0 = kl[i]
             try:
                 kz_root = newton(self.determinant, x0, 
@@ -135,13 +138,14 @@ class wavenumber(elastic_module):
                     kz.append(0+0j)
                     failed_kz.append([single_omega, i, ai.shape[0]])
                     # break
-        
+            tqdm._instances.clear()
         
         if self.q_hole == 0:
             print('Since q=0, the root of kz at the last segment cannot be solved.')
             print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
             kz[-1] = kz[-2]
-
+        
+        
         return np.asarray(kz), failed_kz
     
     
@@ -149,16 +153,19 @@ class wavenumber(elastic_module):
     def axial_wavenumber_array(self, guess=0.1+0.1j):    
         wavenumer_array = np.zeros((self.frequency_array.shape[0], self.segments), dtype=complex)
         failed_roots = []
-        i = 0
-        for frequency, omega in zip(self.frequency_array, self.omega_array()):
-            # omega = frequency * 2 * np.pi
-            kz, failed_kz = self.axial_wavenumber(omega, guess=guess)
+        # i = 0
+        print(f"Solving wavenumber in determinant for shape = {self.shape}, p = {self.p_hole}, q = {self.q_hole}, Young's = {self.Young}")
+        for i in tqdm(range(self.frequency_array.shape[0]), position=0, maxinterval=1, 
+                      desc ='Solving for all frequencies'):
+        # for frequency, omega in zip(self.frequency_array, self.omega_array()):
+            omega = self.omega_array()[i]
+            leave = (i == self.frequency_array.shape[0]-1)
+            kz, failed_kz = self.axial_wavenumber(omega, guess=guess, leave=leave)
             wavenumer_array[i][:] = kz
             failed_roots.append(failed_kz)
             guess=kz[0]
-            i += 1
-            print(f'Solving determinant at {frequency = } is done.')
 
+        print('\n')
         return np.asarray(wavenumer_array), np.asarray(failed_roots)
     
         
