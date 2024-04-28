@@ -104,48 +104,57 @@ class wavenumber(elastic_module):
         ai, _ = self.effective_radius()
         for i in tqdm(range(ai.shape[0]), position=1, leave=leave, 
                       desc =f'  ... working at frequency = {single_omega/(2*np.pi):.1f} Hz', ):
-        # for i in range(ai.shape[0]):
-            # x0 = kl[i]
-            try:
-                kz_root = newton(self.determinant, x0, 
-                                 args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
-                                       self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                 tol=1.48e-8, maxiter=200)
-                kz.append(kz_root)
-                x0 = kz_root
 
-            except RuntimeError:
+            if ai[i] == 0:
+                kz.append(0+0j)
+
+            else:
                 try:
-                    # time.sleep(1)
-                    print(f'First try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
-                    print('Try again...')
-
-                    try:
-                        x0 = kz_root
-                    except UnboundLocalError:
-                        x0 = abs(guess)*(i+1)
-                    
                     kz_root = newton(self.determinant, x0, 
-                                     args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
-                                           self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                     tol=1.48e-8, maxiter=1000)
+                                        args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
+                                            self.longitudinal_speed()[i], self.transverse_speed()[i]), 
+                                        tol=1.48e-8, maxiter=200)
                     kz.append(kz_root)
                     x0 = kz_root
 
                 except RuntimeError:
-                    print(f'Second try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
-                    print('Assume root is 0+0j...')
-                    kz.append(0+0j)
-                    failed_kz.append([single_omega, i, ai.shape[0]])
-                    # break
-            tqdm._instances.clear()
+                    try:
+                        # time.sleep(1)
+                        print(f'First try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
+                        print('Try again...')
+
+                        try:
+                            x0 = kz_root
+                        except UnboundLocalError:
+                            x0 = abs(guess)*(i+1)
+                        
+                        kz_root = newton(self.determinant, x0, 
+                                            args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
+                                                self.longitudinal_speed()[i], self.transverse_speed()[i]), 
+                                            tol=1.48e-8, maxiter=1000)
+                        kz.append(kz_root)
+                        x0 = kz_root
+
+                    except RuntimeError:
+                        print(f'Second try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
+                        print('Assume root is 0+0j...')
+                        kz.append(0+0j)
+                        failed_kz.append([single_omega, i, ai.shape[0]])
+                        # break
+        
+        
+        if self.p_hole == 0:
+            # print('Since p=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[0] = kz[1]).')
+            kz[0] = kz[1]
+        
         
         if self.q_hole == 0:
-            print('Since q=0, the root of kz at the last segment cannot be solved.')
-            print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
+            # print('Since q=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
             kz[-1] = kz[-2]
-        
-        
+
+
         return np.asarray(kz), failed_kz
     
     
@@ -157,7 +166,6 @@ class wavenumber(elastic_module):
         print(f"Solving wavenumber in determinant for shape = {self.shape}, p = {self.p_hole}, q = {self.q_hole}, Young's = {self.Young}")
         for i in tqdm(range(self.frequency_array.shape[0]), position=0, maxinterval=1, 
                       desc ='Solving for all frequencies'):
-        # for frequency, omega in zip(self.frequency_array, self.omega_array()):
             omega = self.omega_array()[i]
             leave = (i == self.frequency_array.shape[0]-1)
             kz, failed_kz = self.axial_wavenumber(omega, guess=guess, leave=leave)
