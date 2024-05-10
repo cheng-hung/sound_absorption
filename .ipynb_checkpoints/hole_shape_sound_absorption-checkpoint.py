@@ -104,48 +104,57 @@ class wavenumber(elastic_module):
         ai, _ = self.effective_radius()
         for i in tqdm(range(ai.shape[0]), position=1, leave=leave, 
                       desc =f'  ... working at frequency = {single_omega/(2*np.pi):.1f} Hz', ):
-        # for i in range(ai.shape[0]):
-            # x0 = kl[i]
-            try:
-                kz_root = newton(self.determinant, x0, 
-                                 args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
-                                       self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                 tol=1.48e-8, maxiter=200)
-                kz.append(kz_root)
-                x0 = kz_root
 
-            except RuntimeError:
+            if ai[i] == 0:
+                kz.append(0+0j)
+
+            else:
                 try:
-                    # time.sleep(1)
-                    print(f'First try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
-                    print('Try again...')
-
-                    try:
-                        x0 = kz_root
-                    except UnboundLocalError:
-                        x0 = abs(guess)*(i+1)
-                    
                     kz_root = newton(self.determinant, x0, 
-                                     args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
-                                           self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                     tol=1.48e-8, maxiter=1000)
+                                        args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
+                                            self.longitudinal_speed()[i], self.transverse_speed()[i]), 
+                                        tol=1.48e-8, maxiter=200)
                     kz.append(kz_root)
                     x0 = kz_root
 
                 except RuntimeError:
-                    print(f'Second try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
-                    print('Assume root is 0+0j...')
-                    kz.append(0+0j)
-                    failed_kz.append([single_omega, i, ai.shape[0]])
-                    # break
-            tqdm._instances.clear()
+                    try:
+                        # time.sleep(1)
+                        print(f'First try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
+                        print('Try again...')
+
+                        try:
+                            x0 = kz_root
+                        except UnboundLocalError:
+                            x0 = abs(guess)*(i+1)
+                        
+                        kz_root = newton(self.determinant, x0, 
+                                            args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
+                                                self.longitudinal_speed()[i], self.transverse_speed()[i]), 
+                                            tol=1.48e-8, maxiter=1000)
+                        kz.append(kz_root)
+                        x0 = kz_root
+
+                    except RuntimeError:
+                        print(f'Second try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
+                        print('Assume root is 0+0j...')
+                        kz.append(0+0j)
+                        failed_kz.append([single_omega, i, ai.shape[0]])
+                        # break
+        
+        
+        if self.p_hole == 0:
+            # print('Since p=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[0] = kz[1]).')
+            kz[0] = kz[1]
+        
         
         if self.q_hole == 0:
-            print('Since q=0, the root of kz at the last segment cannot be solved.')
-            print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
+            # print('Since q=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
             kz[-1] = kz[-2]
-        
-        
+
+
         return np.asarray(kz), failed_kz
     
     
@@ -157,7 +166,6 @@ class wavenumber(elastic_module):
         print(f"Solving wavenumber in determinant for shape = {self.shape}, p = {self.p_hole}, q = {self.q_hole}, Young's = {self.Young}")
         for i in tqdm(range(self.frequency_array.shape[0]), position=0, maxinterval=1, 
                       desc ='Solving for all frequencies'):
-        # for frequency, omega in zip(self.frequency_array, self.omega_array()):
             omega = self.omega_array()[i]
             leave = (i == self.frequency_array.shape[0]-1)
             kz, failed_kz = self.axial_wavenumber(omega, guess=guess, leave=leave)
@@ -301,6 +309,44 @@ class sound_performance(wavenumber):
             fn_absor = os.path.join(filepath, filename.split('.')[0]+'_absor.csv')
             df_absorption.to_csv(fn_absor, sep=' ', index=False, header=True, float_format='{:.8e}'.format)
             print(f'Save file to {fn_absor}') 
+        
+        
+
+
+def anechoic_sound_absorption(determinant, frequency_array,
+                              fp = '/Users/chenghunglin/Documents/', 
+                              fn = 'cone_6_3_fr50.xlsx', 
+                              material='rubber', shape='cone', 
+                              p=6e-3, q=6e-3, lh=40e-3, cell_radius=15e-3, 
+                              num_segments=100, layer_density=1100, air_density=1.21, 
+                              Young_modulus=0.14e9, Poisson_ratio=0.49, loss_factor=0.23, 
+                              medium_density=998, sound_speed_medium=1483):
+    
+    
+    par_dict = {'material':material, 'shape':shape, 
+                'p_hole': p, 'q_hole': q, 'h_hole': lh, 'cell_r': cell_radius, 
+                'segments': num_segments, 'layer_density': layer_density, 'air_density': air_density, 
+                'Young': Young_modulus, 'Poisson': Poisson_ratio, 'loss_factor': loss_factor, 
+                'zw': medium_density * sound_speed_medium, }
+    
+    hole_sound = sound_performance(determinant, frequency_array)
+    
+    for key in par_dict.keys():
+        setattr(hole_sound, key, par_dict[key])
+        
+    hole_sound.wavenumer_array, hole_sound.failed_root = hole_sound.axial_wavenumber_array()
+    
+    try:
+        hole_sound.save_data(fp, fn)
+    except (OSError, FileNotFoundError):
+        fp_new = os.getcwd()
+        print(f'**** Directory {fp} not found, saving data at {fp_new} ****')
+        hole_sound.save_data(fp_new, fn)
+    
+    return hole_sound
+    
+    
+
         
         
 '''

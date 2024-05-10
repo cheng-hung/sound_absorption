@@ -311,6 +311,44 @@ class sound_performance(wavenumber):
             print(f'Save file to {fn_absor}') 
         
         
+
+
+def anechoic_sound_absorption(determinant, frequency_array,
+                              fp = '/Users/chenghunglin/Documents/', 
+                              fn = 'cone_6_3_fr50.xlsx', 
+                              material='rubber', shape='cone', 
+                              p=6e-3, q=6e-3, lh=40e-3, cell_radius=15e-3, 
+                              num_segments=100, layer_density=1100, air_density=1.21, 
+                              Young_modulus=0.14e9, Poisson_ratio=0.49, loss_factor=0.23, 
+                              medium_density=998, sound_speed_medium=1483):
+    
+    
+    par_dict = {'material':material, 'shape':shape, 
+                'p_hole': p, 'q_hole': q, 'h_hole': lh, 'cell_r': cell_radius, 
+                'segments': num_segments, 'layer_density': layer_density, 'air_density': air_density, 
+                'Young': Young_modulus, 'Poisson': Poisson_ratio, 'loss_factor': loss_factor, 
+                'zw': medium_density * sound_speed_medium, }
+    
+    hole_sound = sound_performance(determinant, frequency_array)
+    
+    for key in par_dict.keys():
+        setattr(hole_sound, key, par_dict[key])
+        
+    hole_sound.wavenumer_array, hole_sound.failed_root = hole_sound.axial_wavenumber_array()
+    
+    try:
+        hole_sound.save_data(fp, fn)
+    except (OSError, FileNotFoundError):
+        fp_new = os.getcwd()
+        print(f'**** Directory {fp} not found, saving data at {fp_new} ****')
+        hole_sound.save_data(fp_new, fn)
+    
+    return hole_sound
+    
+    
+
+        
+        
 '''
 Define All twelve elements in the coefficient matrix of Eq. (11) in the paper
 Bessel functions from SymPy
