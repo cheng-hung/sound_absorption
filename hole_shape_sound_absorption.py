@@ -19,6 +19,7 @@ class anechoic_layers():
     ## Section 3.1 and Fig. 7 in the paper
     def __init__(self, material='rubber', shape='cone', 
                  p=4e-3, q=8e-3, lh=40e-3, cell_radius=15e-3, 
+                 theta=0.203, phi=0.035, length_unit='m', 
                  num_segments=100, layer_density=1100, air_density=1.21):
         
         self.material = material
@@ -27,6 +28,9 @@ class anechoic_layers():
         self.q_hole = q
         self.h_hole = lh
         self.cell_r = cell_radius
+        self.theta = theta
+        self.phi = phi
+        self.length_unit = length_unit
         self.segments = num_segments
         self.layer_density = layer_density
         self.air_density = air_density
@@ -49,6 +53,27 @@ class anechoic_layers():
             gamma = phorn
             delta = (1/self.h_hole)*np.log(qhorn/phorn)
             r_effective = gamma*np.exp(delta*lh_n)
+
+        elif self.shape == 'sin':
+            # print(f'The input shape is {shape}.')
+            if self.length_unit == 'mm':
+                const = 1
+                
+            elif self.length_unit == 'm':
+                const = 1000
+
+            ## To compare theta, phi in the reference, the unit of length in the eq turns to mm
+            psin = self.p_hole*const
+            qsin = self.q_hole*const
+            lhsin = self.h_hole*const
+            phi_sin = self.phi*const
+            lh_n_sin = lh_n * const
+            x = (qsin-psin)/np.sin(self.theta*lhsin)
+            alpha = (1/lhsin)*np.log(abs(x))
+            r_temp = np.exp(alpha*lh_n_sin)*np.sin(self.theta*lh_n_sin) + phi_sin
+
+            ## Turn the unit of length back to m for SI units
+            r_effective = r_temp / const
 
         return r_effective, lh_n
     
@@ -346,6 +371,10 @@ def anechoic_sound_absorption(determinant, frequency_array,
     return hole_sound
     
     
+
+def exp_sin_shape(z, theta, phi, alpha):
+    return np.exp(alpha*z) * np.sin(theta*z) + phi
+
 
         
         
