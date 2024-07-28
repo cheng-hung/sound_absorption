@@ -497,8 +497,18 @@ def horn_volume_i(z0, z1, gamma, delta):
 
 
 def sin_volume_i(z0, z1, alpha, theta, phi):
-    volume_z0 = np.exp(alpha*z0)*(alpha*np.sin(theta*z0)-theta*np.cos(theta*z0))/(alpha**2+theta**2) + phi*z0
-    volume_z1 = np.exp(alpha*z1)*(alpha*np.sin(theta*z1)-theta*np.cos(theta*z1))/(alpha**2+theta**2) + phi*z1
+    def sin_integral_01(z, alpha, theta):
+        integral_01 = ((2*alpha)**2-2*alpha*(2*alpha*np.cos(2*theta*z)+2*theta*np.sin(2*theta*z))+4*theta**2)*np.exp(2*alpha*z)/(4*alpha*((2*alpha)**2+4*theta**2))
+        return integral_01
+    def sin_integral_02(z, alpha, theta, phi):
+        integral_02 = 2*phi*(np.exp(alpha*z)*(alpha*np.sin(theta*z)-theta*np.cos(theta*z)))/(alpha**2+theta**2)
+        return integral_02
+    def sin_integral_03(z, phi):
+        integral_03 = z*(phi**2)
+        return integral_03
+
+    volume_z0 = sin_integral_01(z0, alpha, theta) + sin_integral_02(z0, alpha, theta, phi) + sin_integral_03(z0, phi)
+    volume_z1 = sin_integral_01(z1, alpha, theta) + sin_integral_02(z1, alpha, theta, phi) + sin_integral_03(z1, phi)
     volume_i = abs(volume_z1-volume_z0)
     return volume_i
 
