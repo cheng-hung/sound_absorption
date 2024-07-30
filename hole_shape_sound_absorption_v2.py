@@ -80,6 +80,8 @@ class anechoic_layers():
             ## Turn the unit of length back to m for SI units
             r_effective = r_temp / const
 
+        self.radius_array = r_effective
+
         if is_segment:
             self.radius_array = r_effective[1:]
             return r_effective[1:], lh_n[1:]
@@ -220,7 +222,7 @@ class elastic_module(anechoic_layers):
     def longitudinal_speed(self):
         return np.sqrt(self.longitudinal_m()/self.density_array)
 
-
+   
     ## eq.(1-14), in book page 27
     def transverse_speed(self):
         return np.sqrt(self.shear_m()/self.density_array)
@@ -229,120 +231,45 @@ class elastic_module(anechoic_layers):
         
 
 class wavenumber(elastic_module):
-    def __init__(self, determinant, frequency_array):
-        self.determinant = determinant
+    def __init__(self, frequency_array):
         self.frequency_array = np.asarray(frequency_array)
         self.omega_array = np.asarray(frequency_array)*2*np.pi
         super().__init__()
         
     # def omega_array(self):
     #     return self.frequency_array*2*np.pi
-
-
-    ## Solve the determinant equation of determinant numerically in Scipy...
-    def axial_wavenumber(self, single_omega, guess=0.1+0.1j, leave=False):
-        kz = []
-        failed_kz = []
-        # kl = single_omega/self.longitudinal_speed()
-        x0 = abs(guess) # kl[0]
-        ai = self.radius_array
-        for i in tqdm(range(ai.shape[0]), position=1, leave=leave, 
-                      desc =f'  ... working at frequency = {single_omega/(2*np.pi):.1f} Hz', ):
-
-            if ai[i] == 0:
-                kz.append(0+0j)
-
-            else:
-                try:
-                    kz_root = newton(self.determinant, x0, 
-                                        args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
-                                            self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                        tol=1.48e-8, maxiter=200)
-                    kz.append(kz_root)
-                    x0 = kz_root
-
-                except RuntimeError:
-                    try:
-                        # time.sleep(1)
-                        print(f'First try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
-                        print('Try again...')
-
-                        try:
-                            x0 = kz_root
-                        except UnboundLocalError:
-                            x0 = abs(guess)*(i+1)
-                        
-                        kz_root = newton(self.determinant, x0, 
-                                            args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
-                                                self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                            tol=1.48e-8, maxiter=1000)
-                        kz.append(kz_root)
-                        x0 = kz_root
-
-                    except RuntimeError:
-                        print(f'Second try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
-                        print('Assume root is 0+0j...')
-                        kz.append(0+0j)
-                        failed_kz.append([single_omega, i, ai.shape[0]])
-                        # break
-        
-        
-        if self.p_hole == 0:
-            # print('Since p=0, the root of kz at the last segment cannot be solved.')
-            # print('Assign the root next to last to the last (kz[0] = kz[1]).')
-            kz[0] = kz[1]
-        
-        
-        if self.q_hole == 0:
-            # print('Since q=0, the root of kz at the last segment cannot be solved.')
-            # print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
-            kz[-1] = kz[-2]
-
-
-        return np.asarray(kz), failed_kz
-    
-    
-    
-    def axial_wavenumber_array(self, guess=0.1+0.1j):    
-        wavenumer_array = np.zeros((self.frequency_array.shape[0], self.segments), dtype=complex)
-        failed_roots = []
-        # i = 0
-        print(f"Solving wavenumber in determinant for shape = {self.shape}, p = {self.p_hole}, q = {self.q_hole}, Young's = {self.Young}")
-        for i in tqdm(range(self.frequency_array.shape[0]), position=0, maxinterval=1, 
-                      desc ='Solving for all frequencies'):
-            omega = self.omega_array[i]
-            leave = (i == self.frequency_array.shape[0]-1)
-            kz, failed_kz = self.axial_wavenumber(omega, guess=guess, leave=leave)
-            wavenumer_array[i][:] = kz
-            failed_roots.append(failed_kz)
-            guess=kz[0]
-
-        print('\n')
-        return np.asarray(wavenumer_array), np.asarray(failed_roots)
+     
+    ## Research on Sound Absorption and Scattering Characteristics of Acoustic Coatings with Cavities
+    ## Author: Yang Peikai
+    ## Page 30, eq (3.11)
+    def precise_wavenumber(self, omega):
+        # kl = omega/self.longitudinal_speed()
+        kl2 = omega**2/(self.longitudinal_m()/self.density_array)
+        kz2 = np.reciprocal(1+3*self.epsilon_array**2)*(1+(self.epsilon_array**2)*(self.lame_const()/self.shear_m()))*kl2
+        return np.sqrt(kz2)
     
         
 
-        
 
 class sound_performance(wavenumber):
     ## medium_density: density of water 998 kg/m3
     ## sound_speed_medium: Sound speed of water 1483 m/s
-    def __init__(self, determinant, frequency_array, medium_density=998, sound_speed_medium=1483):
+    def __init__(self, frequency_array, medium_density=998, sound_speed_medium=1483):
         self.zw = medium_density * sound_speed_medium
         self.absorption_array = []
-        self.wavenumer_array = []
-        self.failed_root = []
-        super().__init__(determinant, frequency_array)
+        super().__init__(frequency_array)
+
     
-    
+
+    ## Come with wavenumber.precise_wavenumber(omega)
     ## The effective impedance of the total segments under one frequency/omega: (16)
-    def effective_impedance(self, omega, wave_number):
-        return self.density_array*omega/wave_number
+    def effective_impedance(self, omega):
+        return self.density_array*omega/self.precise_wavenumber(omega)
 
 
 
     ## The successive multi-plication of the transfer matrix of each segment: (18)
-    def total_tran_matrix(self, omega, wave_number):
+    def total_tran_matrix(self, omega):
         
         ## The transfer matrix of the i th segment: (17)
         def ith_tran_matrix(wave_number, li, ith_impedance):
@@ -354,45 +281,44 @@ class sound_performance(wavenumber):
             return ti
         
         li = self.h_hole/self.segments
-        impedance = self.effective_impedance(omega, wave_number)
+        impedance = self.effective_impedance(omega)
 
-        t0 = ith_tran_matrix(wave_number[0], li, impedance[0])
+
+        t0 = ith_tran_matrix(self.precise_wavenumber(omega)[0], li, impedance[0])
         tn=t0
         for i in range(1, self.segments):
-            tn = np.matmul(tn, ith_tran_matrix(wave_number[i], li, impedance[i]))      
+            tn = np.matmul(tn, ith_tran_matrix(self.precise_wavenumber(omega)[i], li, impedance[i]))
 
         return tn
 
 
     ## The impedance of the front interface Zf: (22)
-    def imped_front(self, omega, wave_number):
+    def imped_front(self, omega):
         # zf = np.absolute(tn[0,0]/tn[1,0])
-        return (self.total_tran_matrix(omega, wave_number)[0,0]/self.total_tran_matrix(omega, wave_number)[1,0])
+        return (self.total_tran_matrix(omega)[0,0]/self.total_tran_matrix(omega)[1,0])
 
 
     ## The reflection coefficient of the anechoic layer: (23)
-    def reflection_coefficient(self, omega, wave_number):
-        return (self.imped_front(omega, wave_number)-self.zw)/(self.imped_front(omega, wave_number)+self.zw)
+    def reflection_coefficient(self, omega):
+        return (self.imped_front(omega)-self.zw)/(self.imped_front(omega)+self.zw)
 
 
     ## The sound absorption coefficient: (24)
-    def absorption_coefficient(self, omega, wave_number):
-        return 1-np.absolute(self.reflection_coefficient(omega, wave_number))**2
+    def absorption_coefficient(self, omega):
+        return 1-np.absolute(self.reflection_coefficient(omega))**2
         
                
         
     def absorption_frequency(self):
 
-        if self.frequency_array.shape[0] == self.wavenumer_array.shape[0]:
-            print(f'{self.frequency_array.shape[0] = } is same as {self.wavenumer_array.shape[0] = }')
-        else:
-            raise ValueError(f'{self.frequency_array.shape = } not same as {self.wavenumer_array.shape = }')
-
         absorption_list = []
-        for omega, wave_number in zip(self.omega_array, self.wavenumer_array):
-            absorption_list.append(self.absorption_coefficient(omega, wave_number))
-
+        for i in tqdm(range(self.omega_array.shape[0]), position=0, maxinterval=1, 
+                        desc ='Calculating absorption for all frequencies'):
+            omega = self.omega_array[i]
+            absorption_list.append(self.absorption_coefficient(omega))
+        
         self.absorption_array = absorption_list
+
         return np.asarray(absorption_list)
         
         
@@ -408,16 +334,9 @@ class sound_performance(wavenumber):
                             self.theta, self.phi, self.segments, self.Young/(10**9), self.Poisson, 
                             self.loss_factor, self.layer_density, self.air_density, self.use_volume, ]
 
-        df_wave = pd.DataFrame()
-        df_wave['frequency_Hz'] = np.asarray([f'kz_{i:03d}' for i in range(self.segments)])
-        i = 0
-        for frequency in self.frequency_array:
-            df_wave[frequency] = self.wavenumer_array[i][:]
-            i += 1
-
         df_absorption = pd.DataFrame()
         df_absorption['frequency_Hz'] = self.frequency_array
-        
+
         if len(self.absorption_array) == 0:
             self.absorption_frequency()
         else:
@@ -427,10 +346,8 @@ class sound_performance(wavenumber):
         
         try:
             fn = os.path.join(filepath, filename)
-            # writer = pd.ExcelWriter(fn, engine='xlsxwriter')
             with pd.ExcelWriter(fn, engine='xlsxwriter') as writer:
                 df_const.to_excel(writer, sheet_name='Constants', index=False)   
-                df_wave.to_excel(writer, sheet_name='Wave_numbers', index=False)
                 df_absorption.to_excel(writer, sheet_name='Sound_absorption', index=False)
             print(f'Save file to {fn}')
 
@@ -438,9 +355,6 @@ class sound_performance(wavenumber):
             fn_const = os.path.join(filepath, filename.split('.')[0]+'_const.csv')
             df_const.to_csv(fn_const, sep=' ', index=False, header=False, float_format='{:.8e}'.format)
             print(f'Save file to {fn_const}')
-            fn_wave = os.path.join(filepath, filename.split('.')[0]+'_kz.csv')
-            df_wave.to_csv(fn_wave, sep=' ', index=False, header=True, float_format='{:.8e}'.format)
-            print(f'Save file to {fn_wave}')
             fn_absor = os.path.join(filepath, filename.split('.')[0]+'_absor.csv')
             df_absorption.to_csv(fn_absor, sep=' ', index=False, header=True, float_format='{:.8e}'.format)
             print(f'Save file to {fn_absor}') 
@@ -448,7 +362,7 @@ class sound_performance(wavenumber):
         
 
 
-def anechoic_sound_absorption(determinant, frequency_array,
+def anechoic_sound_absorption(frequency_array,
                               fp = '/Users/chenghunglin/Documents/', 
                               fn = 'cone_6_3_fr50.xlsx', 
                               material='rubber', shape='cone', 
@@ -467,19 +381,23 @@ def anechoic_sound_absorption(determinant, frequency_array,
                 'Young': Young_modulus, 'Poisson': Poisson_ratio, 'loss_factor': loss_factor, 
                 'zw': medium_density * sound_speed_medium, 'use_volume': use_volume, }
     
-    hole_sound = sound_performance(determinant, frequency_array)
-    
+    hole_sound = sound_performance(frequency_array)
+
     for key in par_dict.keys():
         setattr(hole_sound, key, par_dict[key])
 
     hole_sound.plot_hole_2D()
-    plt.show()
 
     hole_sound.effective_radius()
     hole_sound.effective_density(use_volume=hole_sound.use_volume)
-    # hole_sound.radius_ratio()
-    hole_sound.wavenumer_array, hole_sound.failed_root = hole_sound.axial_wavenumber_array()
+    hole_sound.radius_ratio()
     hole_sound.absorption_frequency()
+    
+    plt.figure()
+    label = f'p={hole_sound.p_hole}, q={hole_sound.q_hole}, $\\theta$={hole_sound.theta}'
+    plt.plot(hole_sound.frequency_array, hole_sound.absorption_array, label=label)
+    plt.legend()
+    # plt.show()
     
     try:
         hole_sound.save_data(fp, fn)
