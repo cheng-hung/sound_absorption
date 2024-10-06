@@ -18,7 +18,7 @@ class anechoic_layers():
     
     ## Section 3.1 and Fig. 7 in the paper
     def __init__(self, material='rubber', shape='cone', 
-                 p=4e-3, q=8e-3, lh=40e-3, cell_radius=15e-3, 
+                 p=4e-3, q=8e-3, lh=40e-3, la=0.05, cell_radius=15e-3, 
                  theta=0.203, phi=0.035, length_unit='m', 
                  num_segments=100, layer_density=1100, air_density=1.21, 
                  use_volume=False):
@@ -28,6 +28,7 @@ class anechoic_layers():
         self.p_hole = p
         self.q_hole = q
         self.h_hole = lh
+        self.la = la
         self.cell_r = cell_radius
         self.theta = theta
         self.phi = phi
@@ -169,7 +170,7 @@ class anechoic_layers():
 
 
     ## Plot the 2D scheme of the hole based on the given shape
-    def plot_hole_2D(self, la=0.05, label=True):
+    def plot_hole_2D(self, label=True):
 
         title = f'Hole Shape : {self.shape}'
         if self.shape == 'sin':
@@ -181,12 +182,12 @@ class anechoic_layers():
         r, z = self.effective_radius(is_segment=False)
         plt.plot(z, r, label=label, color='tab:blue')
         plt.plot(z, -r, 'tab:blue')
-        plt.vlines(self.h_hole-la, -self.cell_r, self.cell_r)
+        plt.vlines(self.h_hole-self.la, -self.cell_r, self.cell_r)
         plt.vlines(self.h_hole, -self.cell_r, self.cell_r)
         plt.vlines(0, -self.cell_r, self.cell_r, linestyles='--', color='silver')
-        plt.hlines(-self.cell_r, self.h_hole-la, self.h_hole)
-        plt.hlines(self.cell_r, self.h_hole-la, self.h_hole)
-        plt.hlines(0, self.h_hole-la, self.h_hole, linestyles='--', color='silver')
+        plt.hlines(-self.cell_r, self.h_hole-self.la, self.h_hole)
+        plt.hlines(self.cell_r, self.h_hole-self.la, self.h_hole)
+        plt.hlines(0, self.h_hole-self.la, self.h_hole, linestyles='--', color='silver')
         plt.ylim(-self.cell_r*2, self.cell_r*2)
         plt.vlines(0, -r[0], r[0])
         if label:
@@ -452,7 +453,7 @@ def anechoic_sound_absorption(determinant, frequency_array,
                               fp = '/Users/chenghunglin/Documents/', 
                               fn = 'cone_6_3_fr50.xlsx', 
                               material='rubber', shape='cone', 
-                              p=6e-3, q=6e-3, lh=40e-3, cell_radius=15e-3, 
+                              p=6e-3, q=6e-3, lh=40e-3, la=0.05, cell_radius=15e-3, 
                               theta=0.203, phi=0.035, length_unit='m', 
                               num_segments=100, layer_density=1100, air_density=1.21, 
                               Young_modulus=0.14e9, Poisson_ratio=0.49, loss_factor=0.23, 
@@ -461,7 +462,7 @@ def anechoic_sound_absorption(determinant, frequency_array,
     
     
     par_dict = {'material':material, 'shape':shape, 
-                'p_hole': p, 'q_hole': q, 'h_hole': lh, 'cell_r': cell_radius, 
+                'p_hole': p, 'q_hole': q, 'h_hole': lh, 'la': la, 'cell_r': cell_radius, 
                 'theta': theta, 'phi': phi, 'length_unit': length_unit, 
                 'segments': num_segments, 'layer_density': layer_density, 'air_density': air_density, 
                 'Young': Young_modulus, 'Poisson': Poisson_ratio, 'loss_factor': loss_factor, 
