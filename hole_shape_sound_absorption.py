@@ -7,6 +7,11 @@ from sympy import Symbol, besselj, bessely, I, Matrix, lambdify, sqrt
 from sympy.abc import a, b, z
 from scipy.optimize import newton
 from tqdm.auto import tqdm
+# from cxroots import Circle
+# from cxroots import Annulus
+import mpmath
+from scipy.special import jv, yv
+
 
 
 '''
@@ -241,11 +246,98 @@ class wavenumber(elastic_module):
 
 
     ## Solve the determinant equation of determinant numerically in Scipy...
-    def axial_wavenumber(self, single_omega, guess=0.1+0.1j, leave=False):
+    def axial_wavenumber_newton(self, single_omega, guess=0.1+0.1j, leave=False):
         kz = []
         failed_kz = []
         # kl = single_omega/self.longitudinal_speed()
-        x0 = abs(guess) # kl[0]
+        x0 = guess # kl[0]
+        # x0 = abs(guess) # kl[0]
+        # x0 = guess.imag # kl[0]
+        ai = self.radius_array
+        for i in tqdm(range(ai.shape[0]), position=1, leave=leave, 
+                      desc =f'  ... working at frequency = {single_omega/(2*np.pi):.1f} Hz', ):
+
+            if ai[i] == 0:
+                kz.append(0.1+0.1j)
+
+            else:
+                try:
+                    kz_root = newton(self.determinant, x0, 
+                                        args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), 
+                                              single_omega, self.longitudinal_speed()[i], 
+                                              self.transverse_speed()[i]), 
+                                        tol=1.48e-6, maxiter=1000)
+                    kz.append(kz_root)
+                    x0 = kz_root
+
+                except RuntimeError:
+                    try:
+                        # time.sleep(1)
+                        print(f'First try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
+                        print('Try again...')
+
+                        # try:
+                        #     x0 = kz_root
+                        # except UnboundLocalError:
+                        x0 = abs(guess)*(i+1)
+                        kz_root = newton(self.determinant, x0, 
+                                            args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(),
+                                                  single_omega, self.longitudinal_speed()[i], 
+                                                  self.transverse_speed()[i]), 
+                                            tol=1.48e-4, maxiter=2000)
+                        kz.append(kz_root)
+                        x0 = kz_root
+
+                    except RuntimeError:
+                        print(f'Second try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
+                        
+                        try:
+                            print('Try again...')
+                            # x0 = guess*(i+1)
+                            x0 = 0.1+0.1j
+                            kz_root = newton(self.determinant, x0, 
+                                            args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(),
+                                                  single_omega, self.longitudinal_speed()[i],
+                                                  self.transverse_speed()[i]), 
+                                            tol=1.48e-4, maxiter=2000)
+                        
+                        except RuntimeError:
+                            print(f'Third try of finding root at frequency = {single_omega/(2*np.pi):.2f}, {i = } / {ai.shape[0]} failed.')
+                        
+                        print('Assume root is 0.1+0.1j...')
+                        kz.append(0.1+0.1j)
+                        failed_kz.append([single_omega, i, ai.shape[0]])
+                        # break
+        
+        
+        if self.p_hole == 0:
+            # print('Since p=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[0] = kz[1]).')
+            kz[0] = kz[1]
+        
+        
+        if self.q_hole == 0:
+            # print('Since q=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
+            kz[-1] = kz[-2]
+
+        for i in range(len(kz)):
+            if kz[i] == 0.1+0.1j:
+                kz[i] = kz[3]
+                
+        return np.asarray(kz), failed_kz
+    
+
+
+
+
+    ## Solve the simplified determinant equation for accurate solution numerically in Scipy...
+    def axial_wavenumber_newton2(self, single_omega, guess=0.1+0.1j, leave=False):
+        kz = []
+        failed_kz = []
+        # kl = single_omega/self.longitudinal_speed()
+        x0 = guess # kl[0]
+        # x0 = guess.imag # kl[0]
         ai = self.radius_array
         for i in tqdm(range(ai.shape[0]), position=1, leave=leave, 
                       desc =f'  ... working at frequency = {single_omega/(2*np.pi):.1f} Hz', ):
@@ -256,9 +348,9 @@ class wavenumber(elastic_module):
             else:
                 try:
                     kz_root = newton(self.determinant, x0, 
-                                        args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
+                                        args=(ai[i], self.cell_r, single_omega, 
                                             self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                        tol=1.48e-8, maxiter=200)
+                                        tol=1.48e1, maxiter=200)
                     kz.append(kz_root)
                     x0 = kz_root
 
@@ -274,9 +366,9 @@ class wavenumber(elastic_module):
                             x0 = abs(guess)*(i+1)
                         
                         kz_root = newton(self.determinant, x0, 
-                                            args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), single_omega, 
+                                            args=(ai[i], self.cell_r, single_omega, 
                                                 self.longitudinal_speed()[i], self.transverse_speed()[i]), 
-                                            tol=1.48e-8, maxiter=1000)
+                                            tol=1.48e1, maxiter=5000)
                         kz.append(kz_root)
                         x0 = kz_root
 
@@ -300,8 +392,61 @@ class wavenumber(elastic_module):
             kz[-1] = kz[-2]
 
 
-        return np.asarray(kz), failed_kz
+        return np.asarray(kz), failed_kz    
     
+    
+
+
+    ## Solve the determinant equation of determinant numerically in mpmath...
+    def axial_wavenumber_mpmath(self, single_omega, guess=0.1+0.1j, leave=False):
+        kz = []
+        failed_kz = []
+        # kl = single_omega/self.longitudinal_speed()
+        # x0 = abs(guess) # kl[0]
+        ai = self.radius_array
+        mpmath.mp.dps = 30
+        for i in tqdm(range(ai.shape[0]), position=1, leave=leave, 
+                      desc =f'  ... working at frequency = {single_omega/(2*np.pi):.1f} Hz', ):
+
+            if ai[i] == 0:
+                kz.append(0+0j)
+
+            else:
+                # def f1(kz_):
+                #     return self.determinant(kz_, ai[i], self.cell_r, self.shear_m(), self.lame_const(), 
+                #                        single_omega, self.longitudinal_speed()[i], 
+                #                        self.transverse_speed()[i])
+                
+                def f1(kz_):
+                    return self.determinant(kz_, ai[i], self.cell_r, single_omega, 
+                                            self.longitudinal_speed()[i], self.transverse_speed()[i])
+                
+                kz_root = mpmath.findroot(f1, guess, solver='secant', tol=1.48e-3)
+                # kz_root = newton(self.determinant, x0, 
+                #                  args=(ai[i], self.cell_r, self.shear_m(), self.lame_const(), 
+                #                        single_omega, self.longitudinal_speed()[i], 
+                #                        self.transverse_speed()[i]), tol=1.48e-3, maxiter=20)
+                kz.append(kz_root)
+                x0 = kz_root
+
+        
+        
+        if self.p_hole == 0:
+            # print('Since p=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[0] = kz[1]).')
+            kz[0] = kz[1]
+        
+        
+        if self.q_hole == 0:
+            # print('Since q=0, the root of kz at the last segment cannot be solved.')
+            # print('Assign the root next to last to the last (kz[-1] = kz[-2]).')
+            kz[-1] = kz[-2]
+
+
+        return np.asarray(kz), failed_kz    
+
+    
+
     
     
     def axial_wavenumber_array(self, guess=0.1+0.1j):    
@@ -313,13 +458,18 @@ class wavenumber(elastic_module):
                       desc ='Solving for all frequencies'):
             omega = self.omega_array[i]
             leave = (i == self.frequency_array.shape[0]-1)
-            kz, failed_kz = self.axial_wavenumber(omega, guess=guess, leave=leave)
+            if i < 500000:
+                kz, failed_kz = self.axial_wavenumber_newton(omega, guess=guess, leave=leave)
+            else:
+                kz, failed_kz = self.axial_wavenumber_mpmath(omega, guess=guess, leave=leave)
             wavenumer_array[i][:] = kz
             failed_roots.append(failed_kz)
-            guess=kz[0]
+            guess=kz[3]
+            # print(f'{guess = }')
 
         print('\n')
-        return np.asarray(wavenumer_array), np.asarray(failed_roots)
+        # return np.asarray(wavenumer_array), np.asarray(failed_roots)
+        return np.asarray(wavenumer_array), []
     
         
 
@@ -586,3 +736,51 @@ def determinant_from_matrix():
     determinant_01 = lambdify((kz_, a, b, mu, lambda_, omega_, cl_, ct_), determinant_00)
     
     return determinant_01, mat
+
+
+
+'''
+Define the accurate solution of eq.2-29 in the reference book, page 70-71
+Bessel functions from SymPy
+https://docs.sympy.org/latest/modules/functions/special.html
+'''           
+def matrix_accurate_solution(kz, a, b, omega, cl, ct):
+    # kz_ = Symbol('kz')
+    # omega_ = Symbol('omega')
+    # cl_ = Symbol('cl')
+    # ct_ = Symbol('ct')
+    
+    kl = omega/cl
+    kt = omega/ct
+    klr = np.sqrt(kl**2 - kz**2)
+    ktr = np.sqrt(kt**2 - kz**2)
+    # klr = (kl**2 - kz**2)**0.5
+    # ktr = (kt**2 - kz**2)**0.5
+
+    # kl_2 = (omega_/cl_)**2
+    # kt_2 = (omega_/ct_)**2
+    # klr2 = kl_**2 - kz_**2
+    # ktr2 = kt_**2 - kz_**2
+
+    beta = kt**2/(2*kl**2)
+    y = kz**2/kl**2
+    e = b/a
+
+    def theta(a, b, x):
+        # J1x = besselj(1, x)
+        # Y0ex = bessely(0, e*a)
+        # Y1x = bessely(1, x)
+        # J0ex = besselJ(0, e*a)
+        # Y1ex = bessely(1, e*a)
+        # J1ex = besselJ(1, e*a)
+        
+        e = b/a
+        theta_numerator = jv(1, x)*yv(0, e*x) - yv(1, x)*jv(0, e*x)
+        theta_denominator = jv(1, x)*yv(1, e*x) - yv(1, x)*jv(1, e*x)
+
+        return e*x*theta_numerator/theta_denominator
+
+
+    simplified_matrix = ((beta-y)**2)*theta(a, b, klr) + y*(1-y)*theta(a, b, ktr) - (1-y)*beta
+
+    return simplified_matrix
