@@ -26,7 +26,8 @@ class anechoic_layers():
                  p=4e-3, q=8e-3, lh=40e-3, la=0.05, cell_radius=15e-3, 
                  theta=0.203, phi=0.035, length_unit='m', 
                  num_segments=100, layer_density=1100, air_density=1.21, 
-                 use_volume=False):
+                 use_volume=False, 
+                 is_rubber_end=False, lr=2.5e-3):
         
         self.material = material
         self.shape = shape
@@ -38,18 +39,33 @@ class anechoic_layers():
         self.theta = theta
         self.phi = phi
         self.length_unit = length_unit
+
+        ## Initial segments
+        self.segments_ = num_segments
+
+        ## Segments including rubber end if is_rubber_end
         self.segments = num_segments
+
         self.layer_density = layer_density
         self.air_density = air_density
         self.use_volume = use_volume
         self.density_array = []
         self.radius_array = []
         self.epsilon_array = []
+
+        ## Added for using rubber at the end of hole instaed of air
+        ## this change will update the self.density_array and self.radius_array
+        self.is_rubber_end = is_rubber_end
+        self.lr = lr
+
+        ## li is the thickness of the i th segment.
+        self.li = None
         
     
     ## Eq (25-27) in the paper
     def effective_radius(self, is_segment=True):
-        lh_n = np.linspace(0, self.h_hole, self.segments+1)
+        lh_n, lh_step = np.linspace(0, self.h_hole, self.segments_+1, retstep=True)
+        self.li = lh_step
 
         if self.shape == 'cone':
             # print(f'The input shape is {shape}.')
@@ -86,24 +102,42 @@ class anechoic_layers():
             ## Turn the unit of length back to m for SI units
             r_effective = r_temp / const
 
+
+        if self.is_rubber_end:
+            lr_segment:int = int(self.lr/lh_step)
+            # lr_n = np.linspace(self.h_hole, self.h_hole+self.lr, lr_segment)
+            # lr_n:np.ndarray = np.linspace(self.h_hole+lh_step, self.h_hole+lh_step*lr_segment, lr_segment-1)
+            lr_n:np.ndarray = np.arange(self.h_hole+lh_step, self.h_hole+self.lr, lh_step)
+
+            # r_lr = np.ones(lr_n.shape[0]) * r_effective[-1]
+            r_lr:np.ndarray = np.zeros(lr_n.shape[0])
+
+            r_effective:np.ndarray = np.append(r_effective, r_lr)
+            lh_n:np.ndarray = np.append(lh_n, lr_n)
+            
+
         if is_segment:
-            self.radius_array = r_effective[1:]
+            self.radius_array:np.ndarray = r_effective[1:]
+            self.segments:int = self.radius_array.shape[0]
             return r_effective[1:], lh_n[1:]
+        
+        ## for plotting
         else:
-            return r_effective, lh_n
+            return r_effective[:self.segments_+1], lh_n[:self.segments_+1]
     
     
     
     ## Try to use actual volume insteas of effecitve radius
     def shape_volume(self):
-        lh_n = np.linspace(0, self.h_hole, self.segments+1)
+        lh_n, lh_step = np.linspace(0, self.h_hole, self.segments_+1, retstep=True)
+        self.li = lh_step
 
         if self.shape == 'cone':
             pcone, qcone = self.p_hole, self.q_hole
             alpha = (qcone-pcone)/self.h_hole
             beta = pcone
             volume_seg = []
-            for i in range(self.segments):
+            for i in range(self.segments_):
                 volume_i = cone_volume_i(lh_n[i], lh_n[i+1], alpha, beta)
                 volume_seg.append(volume_i)
             
@@ -113,7 +147,7 @@ class anechoic_layers():
             gamma = phorn
             delta = (1/self.h_hole)*np.log(qhorn/phorn)
             volume_seg = []
-            for i in range(self.segments):
+            for i in range(self.segments_):
                 volume_i = horn_volume_i(lh_n[i], lh_n[i+1], gamma, delta)
                 volume_seg.append(volume_i)
 
@@ -136,14 +170,29 @@ class anechoic_layers():
             alpha = (1/lhsin)*np.log(abs(x))
 
             volume_seg = []
-            for i in range(self.segments):
+            for i in range(self.segments_):
                 volume_i = sin_volume_i(lh_n[i], lh_n[i+1], alpha, self.theta, phi_sin)
                 ## Turn the unit of length back to m for SI units
                 volume_i_SI = volume_i / const**3
                 volume_seg.append(volume_i_SI)
             
         
-        return np.asarray(volume_seg)
+        volume_seg = np.asarray(volume_seg)
+
+        
+        if self.is_rubber_end:
+            lr_segment:int = int(self.lr/lh_step)
+            # lr_n = np.linspace(self.h_hole, self.h_hole+self.lr, lr_segment)
+            # lr_n:np.ndarray = np.linspace(self.h_hole+lh_step, self.h_hole+lh_step*lr_segment, lr_segment-1)
+            lr_n:np.ndarray = np.arange(self.h_hole+lh_step, self.h_hole+self.lr, lh_step)
+
+            # r_lr = np.ones(lr_n.shape[0]) * r_effective[-1]
+            v_lr:np.ndarray = np.zeros(lr_n.shape[0])
+
+            volume_seg = np.append(volume_seg, v_lr)
+            self.segments:int = volume_seg.shape[0]
+        
+        return volume_seg
 
     
     
@@ -152,8 +201,9 @@ class anechoic_layers():
     def effective_density(self, use_volume=False):
 
         if use_volume:
-            cell_i_vol = np.pi * (self.cell_r**2) * (self.h_hole/self.segments)
-            air_vol = self.shape_volume()
+            # cell_i_vol:float = np.pi * (self.cell_r**2) * (self.h_hole/self.segments_)
+            cell_i_vol:float = np.pi * (self.cell_r**2) * self.li
+            air_vol:np.ndarray = self.shape_volume()
             layer_vol = cell_i_vol - air_vol
             air_vol_ratio = air_vol / cell_i_vol
             layer_vol_ratio = layer_vol / cell_i_vol
@@ -177,6 +227,12 @@ class anechoic_layers():
     ## Plot the 2D scheme of the hole based on the given shape
     def plot_hole_2D(self, label=True):
 
+
+        if self.is_rubber_end:
+            lr_offset = self.lr
+        else:
+            lr_offset = 0.0
+
         title = f'Hole Shape : {self.shape}'
         if self.shape == 'sin':
             label=f'p= {self.p_hole}, q={self.q_hole}, $\\theta$={self.theta}'
@@ -185,16 +241,32 @@ class anechoic_layers():
         
         plt.figure()
         r, z = self.effective_radius(is_segment=False)
-        plt.plot(z, r, label=label, color='tab:blue')
-        plt.plot(z, -r, 'tab:blue')
+        z_offset = z-lr_offset
+        
+        ## hole boundary: shape dependent
+        plt.plot(z_offset, r, label=label, color='tab:blue')
+        plt.plot(z_offset, -r, 'tab:blue')
+        
+        ## Cell boundary: vertical
         plt.vlines(self.h_hole-self.la, -self.cell_r, self.cell_r)
         plt.vlines(self.h_hole, -self.cell_r, self.cell_r)
+        
+        ## 0 axis: vertical
         plt.vlines(0, -self.cell_r, self.cell_r, linestyles='--', color='silver')
+        
+        ## Cell boundary: horizontal
         plt.hlines(-self.cell_r, self.h_hole-self.la, self.h_hole)
         plt.hlines(self.cell_r, self.h_hole-self.la, self.h_hole)
+        
+        ## 0 axis: horizontal
         plt.hlines(0, self.h_hole-self.la, self.h_hole, linestyles='--', color='silver')
+        
+        ## hole boundary: shape end (vertical)
+        plt.vlines(z_offset[0], -r[0], r[0])
+        plt.vlines(z_offset[-1], -r[-1], r[-1])
+        
         plt.ylim(-self.cell_r*2, self.cell_r*2)
-        plt.vlines(0, -r[0], r[0])
+
         if label:
             plt.legend()
             plt.title(title, fontsize=15, fontweight='bold')
@@ -504,13 +576,13 @@ class sound_performance(wavenumber):
             ti[1,1] = np.cos(wave_number*li)
             return ti
         
-        li = self.h_hole/self.segments
+        # li = self.h_hole/self.segments
         impedance = self.effective_impedance(omega, wave_number)
 
-        t0 = ith_tran_matrix(wave_number[0], li, impedance[0])
+        t0 = ith_tran_matrix(wave_number[0], self.li, impedance[0])
         tn=t0
         for i in range(1, self.segments):
-            tn = np.matmul(tn, ith_tran_matrix(wave_number[i], li, impedance[i]))      
+            tn = np.matmul(tn, ith_tran_matrix(wave_number[i], self.li, impedance[i]))      
 
         return tn
 
@@ -554,10 +626,12 @@ class sound_performance(wavenumber):
         df_const = pd.DataFrame()
         df_const['Variable'] = ['material', 'shape', 'p_mm', 'q_mm', 'lh_mm', 'b_mm', 'theta', 'phi', 
                                 'num_segments', 'Young_GPa', 'Poisson_r', 
-                                'loss_factor', 'rubber_kgm-3', 'air_kgm-3', 'use_volume', ]
+                                'loss_factor', 'rubber_kgm-3', 'air_kgm-3', 'use_volume', 
+                                'is_rubber_end', 'lr_mm', ]
         df_const['Value'] = [self.material, self.shape, self.p_hole*1000, self.q_hole*1000, self.h_hole*1000, self.cell_r*1000, 
                             self.theta, self.phi, self.segments, self.Young/(10**9), self.Poisson, 
-                            self.loss_factor, self.layer_density, self.air_density, self.use_volume, ]
+                            self.loss_factor, self.layer_density, self.air_density, self.use_volume, 
+                            self.is_rubber_end, self.lr*1000, ]
 
         df_wave = pd.DataFrame()
         df_wave['frequency_Hz'] = np.asarray([f'kz_{i:03d}' for i in range(self.segments)])
@@ -608,15 +682,18 @@ def anechoic_sound_absorption(determinant, frequency_array,
                               num_segments=100, layer_density=1100, air_density=1.21, 
                               Young_modulus=0.14e9, Poisson_ratio=0.49, loss_factor=0.23, 
                               medium_density=998, sound_speed_medium=1483, 
-                              use_volume=True):
+                              use_volume=True, 
+                              is_rubber_end=False, lr=2.5e-3):
     
     
     par_dict = {'material':material, 'shape':shape, 
                 'p_hole': p, 'q_hole': q, 'h_hole': lh, 'la': la, 'cell_r': cell_radius, 
                 'theta': theta, 'phi': phi, 'length_unit': length_unit, 
-                'segments': num_segments, 'layer_density': layer_density, 'air_density': air_density, 
+                'segments': num_segments, 'segments_': num_segments,
+                'layer_density': layer_density, 'air_density': air_density, 
                 'Young': Young_modulus, 'Poisson': Poisson_ratio, 'loss_factor': loss_factor, 
-                'zw': medium_density * sound_speed_medium, 'use_volume': use_volume, }
+                'zw': medium_density * sound_speed_medium, 'use_volume': use_volume, 
+                'is_rubber_end':is_rubber_end, 'lr':lr,}
     
     hole_sound = sound_performance(determinant, frequency_array)
     
