@@ -27,7 +27,7 @@ class anechoic_layers():
                  theta=0.203, phi=0.035, length_unit='m', 
                  num_segments=100, layer_density=1100, air_density=1.21, 
                  use_volume=False, 
-                 is_rubber_end=False, lr=2.5e-3):
+                 is_rubber_end=False, lr=2.5e-3, no_air=False):
         
         self.material = material
         self.shape = shape
@@ -60,6 +60,9 @@ class anechoic_layers():
 
         ## li is the thickness of the i th segment.
         self.li = None
+
+        ## no_air means no empty space in the anechoic_layers (e.g., all rubber)
+        self.no_air = no_air
         
     
     ## Eq (25-27) in the paper
@@ -67,40 +70,46 @@ class anechoic_layers():
         lh_n, lh_step = np.linspace(0, self.h_hole, self.segments_+1, retstep=True)
         self.li = lh_step
 
-        if self.shape == 'cone':
-            # print(f'The input shape is {shape}.')
-            pcone, qcone = self.p_hole, self.q_hole
-            alpha = (qcone-pcone)/self.h_hole
-            beta = pcone
-            r_effective = alpha*lh_n + beta
+        if not self.no_air:
 
-        elif self.shape == 'horn':
-            # print(f'The input shape is {shape}.')
-            phorn, qhorn = self.p_hole, self.q_hole
-            gamma = phorn
-            delta = (1/self.h_hole)*np.log(qhorn/phorn)
-            r_effective = gamma*np.exp(delta*lh_n)
+            if self.shape == 'cone':
+                # print(f'The input shape is {shape}.')
+                pcone, qcone = self.p_hole, self.q_hole
+                alpha = (qcone-pcone)/self.h_hole
+                beta = pcone
+                r_effective = alpha*lh_n + beta
 
-        elif self.shape == 'sin':
-            # print(f'The input shape is {shape}.')
-            if self.length_unit == 'mm':
-                const = 1
-                
-            elif self.length_unit == 'm':
-                const = 1000
+            elif self.shape == 'horn':
+                # print(f'The input shape is {shape}.')
+                phorn, qhorn = self.p_hole, self.q_hole
+                gamma = phorn
+                delta = (1/self.h_hole)*np.log(qhorn/phorn)
+                r_effective = gamma*np.exp(delta*lh_n)
 
-            ## To compare theta, phi in the reference, the unit of length in the eq turns to mm
-            psin = self.p_hole*const
-            qsin = self.q_hole*const
-            lhsin = self.h_hole*const
-            phi_sin = self.phi*const
-            lh_n_sin = lh_n * const
-            x = (qsin-psin)/np.sin(self.theta*lhsin)
-            alpha = (1/lhsin)*np.log(abs(x))
-            r_temp = np.exp(alpha*lh_n_sin)*np.sin(self.theta*lh_n_sin) + phi_sin
+            elif self.shape == 'sin':
+                # print(f'The input shape is {shape}.')
+                if self.length_unit == 'mm':
+                    const = 1
+                    
+                elif self.length_unit == 'm':
+                    const = 1000
 
-            ## Turn the unit of length back to m for SI units
-            r_effective = r_temp / const
+                ## To compare theta, phi in the reference, the unit of length in the eq turns to mm
+                psin = self.p_hole*const
+                qsin = self.q_hole*const
+                lhsin = self.h_hole*const
+                phi_sin = self.phi*const
+                lh_n_sin = lh_n * const
+                x = (qsin-psin)/np.sin(self.theta*lhsin)
+                alpha = (1/lhsin)*np.log(abs(x))
+                r_temp = np.exp(alpha*lh_n_sin)*np.sin(self.theta*lh_n_sin) + phi_sin
+
+                ## Turn the unit of length back to m for SI units
+                r_effective = r_temp / const
+
+
+        else:
+            r_effective = np.zeros(self.segments_+1)
 
 
         if self.is_rubber_end:
@@ -114,6 +123,8 @@ class anechoic_layers():
 
             r_effective:np.ndarray = np.append(r_effective, r_lr)
             lh_n:np.ndarray = np.append(lh_n, lr_n)
+
+
             
 
         if is_segment:
@@ -275,32 +286,38 @@ class anechoic_layers():
 
 ## https://en.wikipedia.org/wiki/Lam%C3%A9_parameters
 class elastic_module(anechoic_layers):
-    def __init__(self, Young_modulus=0.14e9, Poisson_ratio=0.49, loss_factor=0.23):
+    def __init__(self, Young_modulus=0.14e9, Poisson_ratio=0.49, loss_factor=0.23,):
         self.Young = Young_modulus
         self.Poisson = Poisson_ratio
         self.loss_factor = loss_factor
         super().__init__()
-        
-        
-    def shear_m(self):
+
+
+    def shear_m(self) -> complex:
         return self.Young*(1-1j*self.loss_factor)/(2*(1+self.Poisson))
 
 
-    def lame_const(self):
+    def lame_const(self) -> complex:
         return self.Young*(1-1j*self.loss_factor)*self.Poisson/((1+self.Poisson)*(1-2*self.Poisson))
 
     ## longitudinal_m = lame_const + 2*shear_m
-    def longitudinal_m(self):
+    def longitudinal_m(self) -> complex:
         return self.Young*(1-self.Poisson)*(1-1j*self.loss_factor)/((1+self.Poisson)*(1-2*self.Poisson))
 
 
     ## eq.(1-13b), in book page 26
-    def longitudinal_speed(self):
+    ## Added for uniform layer material (e.g., all rubber no air hole)
+    def longitudinal_speed_uniform(self) -> complex:
+        return np.sqrt(self.longitudinal_m()/self.layer_density)
+    
+
+    ## eq.(1-13b), in book page 26
+    def longitudinal_speed(self) -> np.array:
         return np.sqrt(self.longitudinal_m()/self.density_array)
 
 
     ## eq.(1-14), in book page 27
-    def transverse_speed(self):
+    def transverse_speed(self) -> np.array:
         return np.sqrt(self.shear_m()/self.density_array)
         
 
@@ -515,10 +532,8 @@ class wavenumber(elastic_module):
             kz[-1] = kz[-2]
 
 
-        return np.asarray(kz), failed_kz    
-
+        return np.asarray(kz), failed_kz
     
-
     
     
     def axial_wavenumber_array(self, guess=0.1+0.1j):    
@@ -543,9 +558,14 @@ class wavenumber(elastic_module):
         # return np.asarray(wavenumer_array), np.asarray(failed_roots)
         return np.asarray(wavenumer_array), []
     
-        
+
+
+    ## The wacvenumber for the unifrom layer material (e.g., all rubber no air hole) from book P.29 (1.2.2)
+    def uniform_wavenumber_array(self):
+        return self.omega_array / self.longitudinal_speed_uniform()
 
         
+
 
 class sound_performance(wavenumber):
     ## medium_density: density of water 998 kg/m3
@@ -554,6 +574,7 @@ class sound_performance(wavenumber):
         self.zw = medium_density * sound_speed_medium
         self.absorption_array = []
         self.wavenumer_array = []
+        self.uniform_wavenumer_array = []
         self.failed_root = []
         super().__init__(determinant, frequency_array)
     
@@ -588,9 +609,27 @@ class sound_performance(wavenumber):
 
 
     ## The impedance of the front interface Zf: (22)
+    ## Add equation of impedence (Z_in) for uniform layer material (e.g., all rubber no air hole) from book P.29 (1-21)
     def imped_front(self, omega, wave_number):
         # zf = np.absolute(tn[0,0]/tn[1,0])
-        return (self.total_tran_matrix(omega, wave_number)[0,0]/self.total_tran_matrix(omega, wave_number)[1,0])
+
+        if not self.no_air:
+            return (self.total_tran_matrix(omega, wave_number)[0,0]/self.total_tran_matrix(omega, wave_number)[1,0])
+        
+        else:
+            uniform_wavenumer = omega / self.longitudinal_speed_uniform()
+            # cotangent = 1/(np.tan(uniform_wavenumer*self.la))
+            # cotangent = 1/(np.tan(wave_number*self.la))
+            # Z_in = -1j*self.layer_density*self.longitudinal_speed_uniform()*cotangent
+            
+            if uniform_wavenumer != wave_number:
+                raise ValueError(f'{uniform_wavenumer = } not equla to {wave_number = }')
+
+            def coth(x):
+                return 1 / np.tanh(x)
+            cotangent_h = coth(1j*wave_number*self.la)
+            Z_in = self.layer_density*self.longitudinal_speed_uniform()*cotangent_h
+            return Z_in
 
 
     ## The reflection coefficient of the anechoic layer: (23)
@@ -606,12 +645,20 @@ class sound_performance(wavenumber):
         
     def absorption_frequency(self):
 
-        if self.frequency_array.shape[0] == self.wavenumer_array.shape[0]:
-            print(f'{self.frequency_array.shape[0] = } is same as {self.wavenumer_array.shape[0] = }')
-        else:
-            raise ValueError(f'{self.frequency_array.shape = } not same as {self.wavenumer_array.shape = }')
-
         absorption_list = []
+
+        if not self.no_air:
+            if self.frequency_array.shape[0] == self.wavenumer_array.shape[0]:
+                print(f'{self.frequency_array.shape[0] = } is same as {self.wavenumer_array.shape[0] = }')
+            else:
+                raise ValueError(f'{self.frequency_array.shape = } not same as {self.wavenumer_array.shape = }')
+            
+        else:
+            if self.frequency_array.shape == self.wavenumer_array.shape:
+                print(f'{self.frequency_array.shape = } is same as {self.wavenumer_array.shape = }')
+            else:
+                raise ValueError(f'{self.frequency_array.shape = } not same as {self.wavenumer_array.shape = }')
+
         for omega, wave_number in zip(self.omega_array, self.wavenumer_array):
             absorption_list.append(self.absorption_coefficient(omega, wave_number))
 
@@ -627,18 +674,25 @@ class sound_performance(wavenumber):
         df_const['Variable'] = ['material', 'shape', 'p_mm', 'q_mm', 'lh_mm', 'b_mm', 'theta', 'phi', 
                                 'num_segments', 'Young_GPa', 'Poisson_r', 
                                 'loss_factor', 'rubber_kgm-3', 'air_kgm-3', 'use_volume', 
-                                'is_rubber_end', 'lr_mm', ]
+                                'is_rubber_end', 'lr_mm', 'no_air']
         df_const['Value'] = [self.material, self.shape, self.p_hole*1000, self.q_hole*1000, self.h_hole*1000, self.cell_r*1000, 
                             self.theta, self.phi, self.segments, self.Young/(10**9), self.Poisson, 
                             self.loss_factor, self.layer_density, self.air_density, self.use_volume, 
-                            self.is_rubber_end, self.lr*1000, ]
+                            self.is_rubber_end, self.lr*1000, self.no_air]
 
         df_wave = pd.DataFrame()
-        df_wave['frequency_Hz'] = np.asarray([f'kz_{i:03d}' for i in range(self.segments)])
-        i = 0
-        for frequency in self.frequency_array:
-            df_wave[frequency] = self.wavenumer_array[i][:]
-            i += 1
+        
+        if not self.no_air:
+            df_wave['frequency_Hz'] = np.asarray([f'kz_{i:03d}' for i in range(self.segments)])
+            i = 0
+            for frequency in self.frequency_array:
+                df_wave[frequency] = self.wavenumer_array[i][:]
+                i += 1
+
+        else:
+            df_wave['frequency_Hz'] = self.frequency_array
+            df_wave['unifrom_wavde_number'] = self.wavenumer_array
+
 
         df_absorption = pd.DataFrame()
         df_absorption['frequency_Hz'] = self.frequency_array
@@ -683,8 +737,12 @@ def anechoic_sound_absorption(determinant, frequency_array,
                               Young_modulus=0.14e9, Poisson_ratio=0.49, loss_factor=0.23, 
                               medium_density=998, sound_speed_medium=1483, 
                               use_volume=True, 
-                              is_rubber_end=False, lr=2.5e-3):
+                              is_rubber_end=False, lr=2.5e-3, no_air=False):
     
+    ## The equations (1-7, 1-21) of uniform layer in the book (page 24-29) use loss factor as a negative number
+    ## thus when calculating unifrom layer (e.g., all rubber) needs to multiply -1
+    if no_air:
+        loss_factor = loss_factor * -1
     
     par_dict = {'material':material, 'shape':shape, 
                 'p_hole': p, 'q_hole': q, 'h_hole': lh, 'la': la, 'cell_r': cell_radius, 
@@ -693,10 +751,10 @@ def anechoic_sound_absorption(determinant, frequency_array,
                 'layer_density': layer_density, 'air_density': air_density, 
                 'Young': Young_modulus, 'Poisson': Poisson_ratio, 'loss_factor': loss_factor, 
                 'zw': medium_density * sound_speed_medium, 'use_volume': use_volume, 
-                'is_rubber_end':is_rubber_end, 'lr':lr,}
+                'is_rubber_end':is_rubber_end, 'lr':lr, 'no_air':no_air}
     
     hole_sound = sound_performance(determinant, frequency_array)
-    
+
     for key in par_dict.keys():
         setattr(hole_sound, key, par_dict[key])
 
@@ -706,8 +764,15 @@ def anechoic_sound_absorption(determinant, frequency_array,
     hole_sound.effective_radius()
     hole_sound.effective_density(use_volume=hole_sound.use_volume)
     # hole_sound.radius_ratio()
-    hole_sound.wavenumer_array, hole_sound.failed_root = hole_sound.axial_wavenumber_array()
+
+    if not hole_sound.no_air:
+        hole_sound.wavenumer_array, hole_sound.failed_root = hole_sound.axial_wavenumber_array()
+        
+    else:
+        hole_sound.wavenumer_array = hole_sound.uniform_wavenumber_array()
+        
     hole_sound.absorption_frequency()
+
     
     try:
         hole_sound.save_data(fp, fn)
